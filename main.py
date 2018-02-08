@@ -1,10 +1,11 @@
 import gi
+gi.require_version('Gtk', '3.0')
+from gi.repository import Gtk, GdkPixbuf, GObject
 
 import ui
+import effects.grayscale
 
-gi.require_version('Gtk', '3.0')
-
-from gi.repository import Gtk, GdkPixbuf, GObject
+# http://openbooks.sourceforge.net/books/wga/graphics-gdk-pixbuf.html
 
 # http://www.tannerhelland.com/3643/grayscale-image-algorithm-vb6/
 # http://www.tannerhelland.com/4660/dithering-eleven-algorithms-source-code/
@@ -15,15 +16,17 @@ from gi.repository import Gtk, GdkPixbuf, GObject
 class ImgViewer():
 
 	def __init__(self, img_path):
-		
-		self.ui = ui.MainWindow(400, 300)
+
+		self.ui = ui.MainWindow(800, 600)
 
 		self.ui.connect('load_image', self._load_image)
-
+		self.ui.connect('exit', self.exit)
+		self.ui.connect('hflip', self.flip_horizontal)
+		self.ui.connect('vflip', self.flip_vertical)
+		self.ui.connect('grayscale', self.grayscale)
 
 		if img_path:
 			self.load_image(img_path)
-			self.img.flip_vertical()
 			self.ui.update_image(self.img.pixbuf)
 
 		self.ui.show()
@@ -35,6 +38,22 @@ class ImgViewer():
 		self.img = Img(GdkPixbuf.Pixbuf.new_from_file(img_path))
 		self.ui.update_image(self.img.pixbuf)
 
+	def flip_horizontal(self, window):
+		self.img.flip_horizontal()
+		self.ui.update_image(self.img.pixbuf)
+
+	def flip_vertical(self, window):
+		self.img.flip_vertical()
+		self.ui.update_image(self.img.pixbuf)
+
+	def grayscale(self, window, method):
+		self.img.apply_effect(
+			getattr(effects.grayscale, method)
+		)
+		self.ui.update_image(self.img.pixbuf)
+
+	def exit(self, window):
+		Gtk.main_quit()
 
 #
 # This presents an image held in memory.
@@ -48,9 +67,10 @@ class Img:
 		self.update_pixbuf(pixbuf)
 
 	def update_pixbuf( self, pixbuf ):
-		self.pixbuf = pixbuf
-		self.width  = pixbuf.get_width()
-		self.height = pixbuf.get_height()
+		self.pixbuf   = pixbuf
+		self.width    = pixbuf.get_width()
+		self.height   = pixbuf.get_height()
+		self.channels = pixbuf.get_n_channels()
 
 	def get_pixel(self, x, y):
 
@@ -61,9 +81,9 @@ class Img:
 			raise IndexError('Invalid pixel')
 
 		# find the offset into the array at which the pixel is
-		offset = ((y * self.width) + x) * 4
+		offset = ((y * self.width) + x) * self.channels
 
-		return bytes(self.pixbuf.get_pixels()[offset:offset + 4])
+		return bytes(self.pixbuf.get_pixels()[offset:offset + self.channels])
 
 	def flip_horizontal(self):
 		self.update_pixbuf(self.pixbuf.flip(True))
@@ -71,6 +91,30 @@ class Img:
 	def flip_vertical(self):
 		self.update_pixbuf(self.pixbuf.flip(False))
 
+	def apply_effect(self, effect):
+
+		print self.width
+		print self.height
+		print self.channels
+		print self.pixbuf.get_rowstride()
+		print len(self.pixbuf.get_pixels())
+
+		result = effect(
+			self.pixbuf.get_pixels(),
+			self.channels
+		)
+
+		pixbuf = GdkPixbuf.Pixbuf.new_from_data(
+			result,
+			self.pixbuf.get_colorspace(),
+			self.pixbuf.get_has_alpha(),
+			self.pixbuf.get_bits_per_sample(),
+			self.width,
+			self.height,
+			self.pixbuf.get_rowstride()
+		)
+
+		self.update_pixbuf(pixbuf)
 
 # which file do we want to load?
 target = None
@@ -83,7 +127,8 @@ target = '/home/simon/Desktop/monkey.jpg'
 app = ImgViewer(target)
 
 
-pb = app.img.pixbuf;
+# pb = app.img.pixbuf;
+pb = None;
 
 if pb:
 
